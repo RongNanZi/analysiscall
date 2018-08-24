@@ -4,43 +4,41 @@ import pickle as p
 import numpy as np
 import keras.backend.tensorflow_backend as KTF
 from keras.callbacks import *
-
 import tensorflow as tf
 import sys
 sys.path.append('../data')
 from modelx import modelx
 # ========system setting======
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 #=========data load======
 data_path = '../data/'
         
 csv_data = pd.read_csv(data_path+'call_reason.csv',usecols=['label'])
-data_x = p.load(open(data_path+'token.x', 'rb'))
+data_x = p.load(open(data_path+'token_baike.x', 'rb'))
 from models import *
 from sklearn.model_selection import train_test_split
 
 
-train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2, random_state=4)
+train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2)
 
 #=====callback object set
 
-tf_board_op = TensorBoard(log_dir='./logs/mix_net/',
-                            write_graph=True,
+tf_board_op = TensorBoard(log_dir='./logs/hierarical_cnn/',
+                            write_graph=False,
                             write_images=True,
                             embeddings_freq=0, embeddings_metadata=None)
-model_save_dir = './model_file/mixNet/'
+model_save_dir = './model_file/hierarical_cnn/'
 
 if not os.path.exists(model_save_dir):
     os.mkdir(model_save_dir)
-tf_save_op = ModelCheckpoint(model_save_dir+'save_gensim_200{val_acc:.4f}.hdf5',
+tf_save_op = ModelCheckpoint(model_save_dir+'acc_{val_acc:.4f}.hdf5',
                                              monitor='val_acc',
                                              verbose=1,
                                              save_best_only=True,
                                              save_weights_only=False,
-                                             mode='max',
-                                             period=1)
+                                             mode='max', period=1)
 es_op = EarlyStopping(monitor='val_acc', patience=10, verbose=0, mode='max')
 
 def get_session():
@@ -56,11 +54,14 @@ def get_model(embedding_matrix,
               max_length,
              n_class):
     inputs = Input(shape = (max_length,))
+    embedding_vec = Embedding(
+            input_dim=embedding_matrix.shape[0],
+            output_dim=embedding_matrix.shape[1],
+            weights=[embedding_matrix],
+            trainable=True)(inputs)
 
-    embedding_vec = Embedding( input_dim=embedding_matrix.shape[0], output_dim=embedding_matrix.shape[1],
-        weights= [embedding_matrix],     trainable=True)(inputs)
 
-    logist = mix_cnn_rnn(embedding_vec, n_class=n_class, channels=[128, 128, 128, 128], l2_a=0)
+    logist = hierarical_net(embedding_vec, [128, 128, 128], n_class=n_class)
     model = Model(inputs=inputs, outputs=logist)
     model.summary()
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -69,7 +70,7 @@ def get_model(embedding_matrix,
 model = get_model(data_x.embedding_matrix, data_x.max_length, 4)
 history = model.fit(x = train_x,
                     y = train_y, 
-                                     batch_size=256,
+                                     batch_size=128,
                                      epochs=100,
                                      verbose=1, 
                                      callbacks=[tf_board_op, tf_save_op, es_op],

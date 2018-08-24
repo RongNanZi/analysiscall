@@ -11,30 +11,31 @@ sys.path.append('../data')
 from modelx import modelx
 # ========system setting======
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 #=========data load======
 data_path = '../data/'
         
 csv_data = pd.read_csv(data_path+'call_reason.csv',usecols=['label'])
-data_x = p.load(open(data_path+'token.x', 'rb'))
+data_x = p.load(open(data_path+'token_baike.x', 'rb'))
+t_embed_data = p.load(open(data_path+'topics_embed.x', 'rb'))
 from models import *
 from sklearn.model_selection import train_test_split
 
 
-train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2, random_state=4)
+train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2)
 
 #=====callback object set
 
-tf_board_op = TensorBoard(log_dir='./logs/mix_net/',
+tf_board_op = TensorBoard(log_dir='./logs/lea_net/',
                             write_graph=True,
                             write_images=True,
                             embeddings_freq=0, embeddings_metadata=None)
-model_save_dir = './model_file/mixNet/'
+model_save_dir = './model_file/leaNet/'
 
 if not os.path.exists(model_save_dir):
     os.mkdir(model_save_dir)
-tf_save_op = ModelCheckpoint(model_save_dir+'save_gensim_200{val_acc:.4f}.hdf5',
+tf_save_op = ModelCheckpoint(model_save_dir+'baike_{val_acc:.4f}.hdf5',
                                              monitor='val_acc',
                                              verbose=1,
                                              save_best_only=True,
@@ -56,11 +57,11 @@ def get_model(embedding_matrix,
               max_length,
              n_class):
     inputs = Input(shape = (max_length,))
-
+    t_embed = K.placeholder(shape=(4, 300))
     embedding_vec = Embedding( input_dim=embedding_matrix.shape[0], output_dim=embedding_matrix.shape[1],
-        weights= [embedding_matrix],     trainable=True)(inputs)
+        weights= [embedding_matrix],     trainable=False)(inputs)
 
-    logist = mix_cnn_rnn(embedding_vec, n_class=n_class, channels=[128, 128, 128, 128], l2_a=0)
+    logist = lea(embedding_vec, t_embed,  n_class=n_class, l2_a=0)
     model = Model(inputs=inputs, outputs=logist)
     model.summary()
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])

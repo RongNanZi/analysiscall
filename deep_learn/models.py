@@ -1,62 +1,76 @@
 from keras.layers import Embedding, Conv1D, Dense, Dropout, Activation, MaxPooling1D
 from keras.layers.core import Flatten
 from keras import regularizers
-from keras.layers import add
+from keras.layers import add, Lambda
 from keras.layers.normalization import BatchNormalization
 from keras.layers import CuDNNGRU
 from keras import regularizers
 from kutilities.layers import Attention
-
-
+import tensorflow as tf
+from keras import backend as K
 from keras.layers.pooling import GlobalMaxPooling1D
 from keras.layers.pooling import GlobalAveragePooling1D
 from keras.layers.core import Dropout
 from keras.layers import Concatenate
+from AttentionWithTopic import * 
+
+
+def join_label(inputs):
+        x_, t_ = inputs
+        g = K.dot(x_, K.transpose(t_))
+        g = K.max(g, axis=-1)
+        g = K.exp(g)
+        g /= K.cast(K.sum(g, axis=-1, keepdims=True)+K.epsilon(), K.floatx())
+        weight_inputs = x_ * K.expand_dims(g)
+        
+        return weight_inputs
+
+def lea(inputs, t_emb, n_class, l2_a=0):
+        af_a = AttentionWithTopic()([inputs, t_emb])
+       # af_a = Lambda(join_label)([inputs, t_emb])
+        #af_a = Attention()(inputs)
+        
+        return aug_cnn(af_a, [128, 128, 128 , 128], n_class)
+
+
+
+
+
+
+
+
+def hierarical_net(inputs, out_size, n_class, l2_a=0):
+        #inputs = Lambda(lambda x: [x[i*100 :(i+1)*100,:] for i in range(20)])(inputs)
+        inputs = Lambda(lambda x: tf.unstack(x, axis=1))(inputs)
+        print('the inputs is'.format(len(inputs)))
+        outputs = []
+        for i in range(6):
+                x  = Lambda(lambda x: tf.stack(x,axis=1))(inputs[i*100 : (i+1)*100])
+                af_a = Attention()(x)
+                outputs.append(af_a)
+        outputs = Lambda(lambda x: tf.stack(x,axis=1))(outputs)
+        return aug_cnn(outputs,out_size,  n_class, l2_a)
 
 def res_block(inputs, kernel_size, out_size, l2_a, dropout):
 
     outputs = inputs
     for i, k_size in enumerate(kernel_size):
         
-        outputs = Conv1D(filters = out_size,
+        outputs1 = Conv1D(filters = out_size,
                     kernel_size = kernel_size[0],
                     padding = 'same',
                     activation=None)(outputs)
-        
-        outputs = Activation('relu')(outputs)
-        
-        outputs = Dropout(dropout)(outputs)
-    """   
-    output1 = Conv1D(filters = out_size,
-                    kernel_size = 1,
-                    padding = 'same',
-                    kernel_regularizer = regularizers.l2(l2_a),
-                    activation=None)(inputs)
-    output2 = Conv1D(filters = out_size,
-                    kernel_size = kernel_size[0],
-                    padding = 'same',
-                    kernel_regularizer = regularizers.l2(l2_a),
-                    activation=None)(inputs)
-
-    output3 = Concatenate(-1)([output1, output2])
-    output4 = Activation('relu')(output3)
-    
-    
-    output7 = Conv1D(filters = out_size,
-                    kernel_size = 1,
-                    padding = 'same',
-                    kernel_regularizer = regularizers.l2(l2_a),
-                    activation=None)(output4)
-    output8 = Conv1D(filters = out_size,
+ 
+        outputs2 = Conv1D(filters = out_size,
                     kernel_size = kernel_size[1],
                     padding = 'same',
-                    kernel_regularizer = regularizers.l2(l2_a),
-                    activation=None)(output4)
-    
-    output9 = Concatenate(-1)([output7, output8])
-    output10 = Activation('relu')(output9)
-    """
-    
+                    activation=None)(outputs)
+        
+        outputs = Concatenate(-1)([outputs1, outputs2])
+
+        outputs = Activation('relu')(outputs)
+        outputs = Dropout(dropout)(outputs)
+        
 
     # downsample by 1*1 filter
     if inputs.shape[-1] != outputs.shape[-1]:
@@ -69,7 +83,6 @@ def Resnet(inputs,
            n_class,
            l2_a = 0.0001,
            dropout = 0.5,
-           attention = False,
                  kernel_size = [2,3],
                  block_outputs=[64, 128, 128]):
     """
@@ -81,8 +94,6 @@ def Resnet(inputs,
     block_outputs : filters size per block
     ======================
     """
-    if attention:
-            inputs = Attention()(inputs)
     #======N bolcks in model
     for i, out_channle  in enumerate(block_outputs):
         if i == 0:
@@ -91,7 +102,8 @@ def Resnet(inputs,
             m_out = res_block(inputs=m_out, kernel_size=kernel_size, out_size=out_channle, dropout=dropout, l2_a=l2_a)
         m_out = MaxPooling1D(pool_size = 2)(m_out)
     f_out = Flatten()(m_out)
-    f_out = Dense(256, kernel_regularizer=regularizers.l2(l2_a),activation='tanh')(f_out)
+    #the activation influence a lot ;from 40.78% to 78%
+    f_out = Dense(256, kernel_regularizer=regularizers.l2(l2_a),activation='relu')(f_out)
     f_out = Dropout(dropout)(f_out)
     f_out = Dense(n_class, activation='softmax')(f_out)
     return f_out
@@ -140,7 +152,7 @@ def tcn_block(inputs,
 def tcn(inputs, 
         n_class, 
         channels,
-        kernel_size = 2):
+        kernel_size = 3):
     
     for i, filters in enumerate(channels):
         dilation = 2 ** i
@@ -148,6 +160,7 @@ def tcn(inputs,
             m_out = tcn_block(inputs = inputs,  filters=filters, dilation = dilation)
         else:
             m_out = tcn_block(inputs = m_out, filters=filters, dilation = dilation)
+        m_out = MaxPooling1D(pool_size = 2)(m_out)
     m_out = GlobalMaxPooling1D()(m_out) 
     d_out = Dense(32, activation = 'tanh')(m_out)
     d_out = Dropout(0.5)(d_out)

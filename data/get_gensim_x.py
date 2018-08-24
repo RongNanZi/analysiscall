@@ -13,7 +13,7 @@ def get_gensim_embedding(data, col, embed_name):
     
     if col != 'token':
         sentences = data[col].values
-        model = word2vec.Word2Vec(sentences, hs=1,  window=5, size=128, max_vocab_size =None)
+        model = word2vec.Word2Vec(sentences, hs=1,  window=5, size=256, max_vocab_size =None)
         
     else:
         #get vocabulary by tfidf
@@ -22,7 +22,7 @@ def get_gensim_embedding(data, col, embed_name):
         vec.fit(data[col])
         voc = vec.vocabulary_
         sentences = data[col].apply(lambda x:[item for item in x.split() if item in voc.keys()]).values  
-        model = word2vec.Word2Vec(sentences,min_count = 0, hs=1,  window=5, size=128, max_vocab_size =None)
+        model = word2vec.Word2Vec(sentences,min_count = 0, hs=1,  window=5, size=256, max_vocab_size =None)
     print('the embedding size is {}\n save it!\n'.format(model.wv.vectors.shape))
     model.save(embed_name)
     return model
@@ -67,13 +67,14 @@ def get_gensim_token_x(csv_path,
         idx= []
         for token in text.split():
             if token in voc.keys():
-                idx.append(voc[token].index)
+                idx.append(voc[token].index+1)
         return idx
     
     train_x = pd.read_csv(csv_path, usecols=[col])[col].apply(text2idx)
-    #w2v.wv.vocab['unk'].index = 126
-    embedding_matrix = w2v.wv.vectors
-    data = pad_sequences(train_x, maxlen=token_length, value=voc['unk'].index)
+
+    embedding_matrix = [np.zeros_like(w2v.wv.vectors[0])] + w2v.wv.vectors
+    
+    data = pad_sequences(train_x, maxlen=token_length, value=0)
     
     x = modelx(embedding_matrix, token_length, data)
     with open(x_file, 'wb') as f:

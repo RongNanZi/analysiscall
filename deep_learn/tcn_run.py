@@ -17,19 +17,16 @@ os.environ["CUDA_VISIBLE_DEVICES"]="3"
 data_path = '../data/'
         
 csv_data = pd.read_csv(data_path+'call_reason.csv',usecols=['label'])
-data_x = p.load(open(data_path+'token_20Kbaike.x', 'rb'))
+data_x = p.load(open(data_path+'token.x', 'rb'))
 from models import *
 from sklearn.model_selection import train_test_split
 
 
-train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2)
+train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2, random_state=4)
 
 #=====callback object set
-import logging
-logging.basicConfig(filename='train_all.log', level=logging.INFO)
-logging.info('========================================================\n ')
 
-tf_board_op = TensorBoard(log_dir='./logs/tcn/baike',
+tf_board_op = TensorBoard(log_dir='./logs/tcn/regular',
                             write_graph=True,
                             write_images=True,
                             embeddings_freq=0, embeddings_metadata=None)
@@ -37,7 +34,7 @@ model_save_dir = './model_file/TcnNet/'
 
 if not os.path.exists(model_save_dir):
     os.mkdir(model_save_dir)
-tf_save_op = ModelCheckpoint(model_save_dir+'acc_{val_acc:.4f}.hdf5',
+tf_save_op = ModelCheckpoint(model_save_dir+'save_regular_{val_acc:.4f}.hdf5',
                                              monitor='val_acc',
                                              verbose=1,
                                              save_best_only=True,
@@ -63,9 +60,7 @@ def get_model(embedding_matrix,
     embedding_vec = Embedding( input_dim=embedding_matrix.shape[0], output_dim=embedding_matrix.shape[1],
         weights= [embedding_matrix],     trainable=True)(inputs)
 
-    logging.info('the model is use res  net, \n \t ngrams = [64, 128, 128],\n \
-    \t level : token  \n \t embedding : static  \n \t max_length : 150 \n' )
-    logist = tcn(embedding_vec, n_class=n_class, channels=[64, 128, 128, 128, 128], kernel_size=3)
+    logist = tcn(embedding_vec, n_class=n_class, channels=[64, 128, 128, 128], kernel_size=3)
     model = Model(inputs=inputs, outputs=logist)
     model.summary()
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -80,4 +75,3 @@ history = model.fit(x = train_x,
                                      callbacks=[tf_board_op, tf_save_op, es_op],
                                      validation_data = (test_x, test_y),
                                      shuffle=True)
-logging.info(history.history)

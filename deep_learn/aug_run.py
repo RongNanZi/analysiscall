@@ -10,25 +10,22 @@ sys.path.append('../data')
 from modelx import modelx
 # ========system setting======
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="2"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 #=========data load======
 data_path = '../data/'
         
 csv_data = pd.read_csv(data_path+'call_reason.csv',usecols=['label'])
-data_x = p.load(open(data_path+'token_20K_nl_baike.x', 'rb'))
+data_x = p.load(open(data_path+'token.x', 'rb'))
 from models import *
 from sklearn.model_selection import train_test_split
 
 
-train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2)
+train_x, test_x, train_y, test_y = train_test_split(data_x.data, csv_data['label'], test_size=0.2, random_state=4 )
 
 #=====callback object set
-import logging
-logging.basicConfig(filename='./train_all.log', level=logging.INFO)
-logging.info('========================================================\n ')
 
-tf_board_op = TensorBoard(log_dir='./logs/aug_cnn/no_length',
+tf_board_op = TensorBoard(log_dir='./logs/aug_cnn/regular',
                             write_graph=False,
                             write_images=True,
                             embeddings_freq=0, embeddings_metadata=None)
@@ -36,7 +33,7 @@ model_save_dir = './model_file/aug_cnn/'
 
 if not os.path.exists(model_save_dir):
     os.mkdir(model_save_dir)
-tf_save_op = ModelCheckpoint(model_save_dir+'no_length_{val_acc:.4f}.hdf5',
+tf_save_op = ModelCheckpoint(model_save_dir+'save_regular_{val_acc:.4f}.hdf5',
                                              monitor='val_acc',
                                              verbose=1,
                                              save_best_only=True,
@@ -54,8 +51,9 @@ from keras.engine import Input
 from keras.models import Model
 
 def get_model(embedding_matrix,
+              max_length,
              n_class):
-    inputs = Input(shape = (None,))
+    inputs = Input(shape = (max_length,))
     embedding_vec = Embedding(
             input_dim=embedding_matrix.shape[0],
             output_dim=embedding_matrix.shape[1],
@@ -63,15 +61,13 @@ def get_model(embedding_matrix,
             trainable=True)(inputs)
 
 
-    logging.info('the model is use aug  net, \n \t ngrams = [256, 128, 64, 64],\n \
-    \t level : token  \n \t embedding : trainable \n \t max_length : 7500 \n' )
     logist = aug_cnn(embedding_vec, [128, 128, 128, 128, 128], n_class=n_class)
     model = Model(inputs=inputs, outputs=logist)
     model.summary()
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
 
-model = get_model(data_x.embedding_matrix, 4)
+model = get_model(data_x.embedding_matrix, data_x.max_length,  4)
 history = model.fit(x = train_x,
                     y = train_y, 
                                      batch_size=256,
@@ -80,4 +76,3 @@ history = model.fit(x = train_x,
                                      callbacks=[tf_board_op, tf_save_op, es_op],
                                      validation_data = (test_x, test_y),
                                      shuffle=True)
-logging.info(history.history)
